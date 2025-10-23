@@ -346,8 +346,8 @@ class ModelVisualizer:
         Plot confusion matrix.
         
         Args:
-            y_true (np.array): True labels (class indices)
-            y_pred (np.array): Predicted labels (class indices)
+            y_true (np.array): True labels (one-hot encoded or class indices)
+            y_pred (np.array): Predicted labels (probabilities or class indices)
             fold_num (int): Fold number
             feature_name (str): Feature name
             normalize (bool): Whether to normalize the confusion matrix
@@ -356,6 +356,12 @@ class ModelVisualizer:
         Returns:
             figure: Matplotlib figure object
         """
+        # Convert one-hot encoded or probabilities to class indices
+        if len(y_true.shape) > 1 and y_true.shape[1] > 1:
+            y_true = np.argmax(y_true, axis=1)
+        if len(y_pred.shape) > 1 and y_pred.shape[1] > 1:
+            y_pred = np.argmax(y_pred, axis=1)
+        
         cm = confusion_matrix(y_true, y_pred)
         
         if normalize:
