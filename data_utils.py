@@ -307,14 +307,6 @@ def compute_overall_metrics(all_fold_metrics):
     )
     
     return avg_metrics
-        'TP': class_metrics_df['TP'].sum(),
-        'FP': class_metrics_df['FP'].sum(),
-        'TN': class_metrics_df['TN'].sum(),
-        'FN': class_metrics_df['FN'].sum(),
-    }
-    overall.update(weighted_metrics)
-    
-    return pd.DataFrame([overall])
 
 
 # ============================================================================
