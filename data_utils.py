@@ -564,7 +564,7 @@ def load_test_data_with_plm(data_dir, feature_name, vector_size):
 
 def load_sequences_from_fasta(data_dir, feature_name, is_training=True):
     """
-    Load protein sequences from FASTA files.
+    Load protein sequences from FASTA files using BioPython.
     
     Args:
         data_dir (Path): Directory containing FASTA files
@@ -585,12 +585,13 @@ def load_sequences_from_fasta(data_dir, feature_name, is_training=True):
         fasta_file = data_dir / file_pattern.format(class_name=class_name)
         
         if fasta_file.exists():
-            with open(fasta_file, 'r') as f:
-                for line in f:
-                    if line.startswith('>'):
-                        continue
-                    sequences.append(line.strip())
+            # Use BioPython to properly parse FASTA format
+            for record in SeqIO.parse(fasta_file, "fasta"):
+                seq = clean_sequence(str(record.seq))
+                if seq:  # Only add non-empty sequences
+                    sequences.append(seq)
         else:
             print(f"Warning: {fasta_file} not found")
     
+    print(f"Loaded {len(sequences)} protein sequences from FASTA files")
     return sequences
