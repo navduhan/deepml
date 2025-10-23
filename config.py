@@ -157,7 +157,7 @@ METRICS_LIST = [
 # ============================================================================
 
 # ESM-2 model configuration
-PLM_MODEL_NAME = "esm2_t33_650M_UR50D"  # ESM-2 model variant
+PLM_MODEL_NAME = "facebook/esm2_t33_650M_UR50D"  # ESM-2 model variant (Hugging Face format)
 PLM_EMBEDDING_DIM = 1280  # ESM-2 embedding dimension
 PLM_POOLING_STRATEGY = "mean"  # How to pool sequence embeddings
 PLM_MAX_LENGTH = 1024  # Maximum sequence length for ESM-2
