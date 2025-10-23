@@ -67,24 +67,38 @@ class ESM2FeatureExtractor:
     def _load_model(self):
         """Load ESM-2 model and tokenizer."""
         try:
-            # Load model and tokenizer
-            self.model, self.alphabet = esm.pretrained.load_model_and_alphabet(self.model_name)
+            # Map model names to ESM-2 loading functions
+            model_funcs = {
+                "esm2_t33_650M_UR50D": esm.pretrained.esm2_t33_650M_UR50D,
+                "esm2_t30_150M_UR50D": esm.pretrained.esm2_t30_150M_UR50D,
+                "esm2_t12_35M_UR50D": esm.pretrained.esm2_t12_35M_UR50D,
+                "esm2_t6_8M_UR50D": esm.pretrained.esm2_t6_8M_UR50D,
+            }
+            
+            if self.model_name not in model_funcs:
+                raise ValueError(f"Unknown model: {self.model_name}. Available: {list(model_funcs.keys())}")
+            
+            # Load model and alphabet
+            self.model, self.alphabet = model_funcs[self.model_name]()
             self.model.eval()
             self.model.to(self.device)
             
-            # Get tokenizer
+            # Get batch converter
             self.batch_converter = self.alphabet.get_batch_converter()
             
             print(f"ESM-2 model loaded successfully on {self.device}")
             
         except Exception as e:
             print(f"Error loading ESM-2 model: {e}")
-            print("Falling back to CPU...")
-            self.device = "cpu"
-            self.model, self.alphabet = esm.pretrained.load_model_and_alphabet(self.model_name)
-            self.model.eval()
-            self.model.to(self.device)
-            self.batch_converter = self.alphabet.get_batch_converter()
+            if self.device != "cpu":
+                print("Falling back to CPU...")
+                self.device = "cpu"
+                self.model, self.alphabet = model_funcs[self.model_name]()
+                self.model.eval()
+                self.model.to(self.device)
+                self.batch_converter = self.alphabet.get_batch_converter()
+            else:
+                raise
     
     def extract_embeddings(self, sequences: List[str], 
                           pooling_strategy: str = "mean",
