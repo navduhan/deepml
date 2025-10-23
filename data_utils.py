@@ -453,23 +453,22 @@ def fasta_to_dataframe(fasta_file, class_label):
 # RESULTS EXPORT UTILITIES
 # ============================================================================
 
-def save_predictions_with_probabilities(predictions, probabilities, ids,
-                                       output_file, include_class_names=True):
+def save_predictions_with_probabilities(ids, probabilities, output_file, include_class_names=True):
     """
     Save predictions with class probabilities to file.
     
     Args:
-        predictions (np.array): Predicted class indices
-        probabilities (np.array): Prediction probabilities for all classes
         ids (list): Sequence identifiers
+        probabilities (np.array): Prediction probabilities for all classes
         output_file (Path or str): Output file path
         include_class_names (bool): Whether to include class name column
     
     Example:
-        >>> save_predictions_with_probabilities(
-        ...     pred, proba, seq_ids, "predictions.txt"
-        ... )
+        >>> save_predictions_with_probabilities(seq_ids, pred_proba, "predictions.txt")
     """
+    # Get predicted class indices from probabilities
+    predictions = np.argmax(probabilities, axis=1)
+    
     df = pd.DataFrame({'ID': ids})
     
     # Add probability columns
