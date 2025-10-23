@@ -112,7 +112,8 @@ class ESM2FeatureExtractor:
     def extract_embeddings(self, sequences: List[str], 
                           pooling_strategy: str = "mean",
                           max_length: int = 1024,
-                          batch_size: int = 8) -> np.ndarray:
+                          batch_size: int = 8,
+                          show_progress: bool = True) -> np.ndarray:
         """
         Extract ESM-2 embeddings for protein sequences using Hugging Face transformers.
         Processes sequences in batches to avoid GPU memory issues.
@@ -140,8 +141,12 @@ class ESM2FeatureExtractor:
         
         # Process in batches to avoid OOM
         all_pooled_embeddings = []
+        num_batches = (len(sequences) + batch_size - 1) // batch_size
         
-        for i in range(0, len(sequences), batch_size):
+        import time
+        start_time = time.time()
+        
+        for batch_idx, i in enumerate(range(0, len(sequences), batch_size)):
             batch_sequences = sequences[i:i + batch_size]
             
             try:
@@ -177,6 +182,15 @@ class ESM2FeatureExtractor:
                 
                 all_pooled_embeddings.append(pooled_embeddings.cpu().numpy())
                 
+                # Show progress
+                if show_progress and (batch_idx + 1) % 10 == 0:
+                    elapsed = time.time() - start_time
+                    sequences_processed = min((batch_idx + 1) * batch_size, len(sequences))
+                    rate = sequences_processed / elapsed
+                    remaining = (len(sequences) - sequences_processed) / rate if rate > 0 else 0
+                    print(f"  Processed {sequences_processed}/{len(sequences)} sequences "
+                          f"({rate:.1f} seq/s, ~{remaining:.0f}s remaining)")
+                
                 # Clear GPU cache
                 if self.device == "cuda":
                     torch.cuda.empty_cache()
@@ -193,6 +207,11 @@ class ESM2FeatureExtractor:
                         raise RuntimeError("Cannot process even single sequence. Try using CPU or smaller model.")
                 else:
                     raise
+        
+        # Final timing report
+        total_time = time.time() - start_time
+        if show_progress:
+            print(f"  Completed: {len(sequences)} sequences in {total_time:.1f}s ({len(sequences)/total_time:.1f} seq/s)")
         
         return np.vstack(all_pooled_embeddings)
     
@@ -311,8 +330,14 @@ class PLMFeatureManager:
                 print(f"Error loading cache: {e}, recomputing...")
         
         # Compute embeddings with batch processing
+        import time
         print(f"Computing ESM-2 embeddings for {len(sequences)} sequences (batch_size={batch_size})...")
-        embeddings = self.extractor.extract_embeddings(sequences, batch_size=batch_size)
+        start_time = time.time()
+        
+        embeddings = self.extractor.extract_embeddings(sequences, batch_size=batch_size, show_progress=True)
+        
+        total_time = time.time() - start_time
+        print(f"Total embedding time: {total_time:.1f}s ({len(sequences)/total_time:.1f} sequences/second)")
         
         # Save to cache
         print("Saving embeddings to cache...")

@@ -150,24 +150,40 @@ def get_feature_method(feature_name, extractor):
 # DATA MANIPULATION
 # ============================================================================
 
-def shuffle_data(features, labels):
+def shuffle_data(features, plm_features, labels, protein_ids):
     """
-    Shuffle features and labels in unison.
+    Shuffle features, PLM features, labels, and protein IDs in unison.
     
     Args:
-        features (np.array): Feature matrix
+        features (np.array or None): Traditional feature matrix
+        plm_features (np.array or None): PLM feature matrix
         labels (np.array): Label matrix
+        protein_ids (list): List of protein identifiers
     
     Returns:
-        tuple: (shuffled_features, shuffled_labels)
+        tuple: (shuffled_features, shuffled_plm_features, shuffled_labels, shuffled_ids)
     
     Example:
-        >>> X_shuffled, y_shuffled = shuffle_data(X, y)
+        >>> X_shuffled, X_plm_shuffled, y_shuffled, ids_shuffled = shuffle_data(X, X_plm, y, ids)
     """
-    permutation = np.random.permutation(features.shape[0])
-    shuffled_features = features[permutation]
+    # Determine size from labels or first non-None features
+    if features is not None:
+        size = features.shape[0]
+    elif plm_features is not None:
+        size = plm_features.shape[0]
+    else:
+        size = labels.shape[0]
+    
+    # Generate random permutation
+    permutation = np.random.permutation(size)
+    
+    # Shuffle each component
+    shuffled_features = features[permutation] if features is not None else None
+    shuffled_plm_features = plm_features[permutation] if plm_features is not None else None
     shuffled_labels = labels[permutation]
-    return shuffled_features, shuffled_labels
+    shuffled_ids = [protein_ids[i] for i in permutation]
+    
+    return shuffled_features, shuffled_plm_features, shuffled_labels, shuffled_ids
 
 
 def softmax(z):
@@ -494,12 +510,16 @@ def load_training_data_with_plm(data_dir, feature_name, vector_size):
     Returns:
         tuple: (traditional_features, plm_features, labels, protein_ids)
     """
+    import time
     print(f"Loading training data with PLM features: {feature_name}")
     
     # Load traditional features
+    start_time = time.time()
     traditional_features, labels, protein_ids = load_all_training_data(
         data_dir, feature_name, vector_size
     )
+    trad_time = time.time() - start_time
+    print(f"Traditional feature extraction time: {trad_time:.1f}s")
     
     # Load PLM features
     if config.USE_PLM_FEATURES:
@@ -534,12 +554,16 @@ def load_test_data_with_plm(data_dir, feature_name, vector_size):
     Returns:
         tuple: (traditional_features, plm_features, labels, protein_ids)
     """
+    import time
     print(f"Loading test data with PLM features: {feature_name}")
     
     # Load traditional features
+    start_time = time.time()
     traditional_features, labels, protein_ids = load_all_test_data(
         data_dir, feature_name, vector_size
     )
+    trad_time = time.time() - start_time
+    print(f"Traditional feature extraction time: {trad_time:.1f}s")
     
     # Load PLM features
     if config.USE_PLM_FEATURES:
