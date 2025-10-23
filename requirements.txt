@@ -1,0 +1,34 @@
+# Core deep learning
+tensorflow==2.16.2
+protobuf==4.25.3
+
+# Data science and visualization
+numpy
+pandas
+matplotlib
+seaborn
+scikit-learn
+scipy
+plotly
+
+# Jupyter and development
+jupyter
+notebook
+ipykernel
+tqdm
+
+# Image processing
+pillow
+
+# Bioinformatics
+biopython
+
+# File handling
+openpyxl
+
+# Protein Language Models
+fair-esm
+transformers
+torch
+
+# Note: ESM-2 requires PyTorch for protein language model inference

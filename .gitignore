@@ -1,0 +1,104 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Model and results directories
+results/
+tmodels/
+tstat/
+test_stat/
+plots/
+ROC/
+slurm/
+
+# Generated data files
+final/
+*.fasta
+*.txt
+!requirements.txt
+*.xlsx
+*.csv
+*.log
+
+# Model files
+*.keras
+*.h5
+*.pkl
+*.joblib
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# SLURM job files
+*.out
+*.err
+slurm-*.out
+
+# Training logs
+training.log
+*.log
+
+# Feature extraction outputs
+features/
+embeddings/
+vectors/
+
+# Test outputs
+test_*
+predictions_*
+MCC_*
+ROC_*
+PR_*
+
+# Visualization outputs
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
+
+# Backup files
+*.bak
+*.backup
+*~

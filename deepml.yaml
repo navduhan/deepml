@@ -1,0 +1,26 @@
+name: deepml
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - tensorflow[and-cuda]==2.16.2
+      - protobuf==4.25.3
+      - numpy
+      - pandas
+      - matplotlib
+      - scikit-learn
+      - seaborn
+      - notebook
+      - jupyter
+      - tqdm
+      - pillow
+      - biopython
+      - openpyxl
+      - scipy
+      - plotly
+      - ipykernel
+      - fair-esm
+      - transformers
+      - torch
