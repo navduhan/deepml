@@ -510,27 +510,48 @@ class ModelCheckpointCustom(tf.keras.callbacks.Callback):
 # ============================================================================
 
 class AttentionFusionLayer(tf.keras.layers.Layer):
-    """Attention-based fusion layer for combining traditional and PLM features."""
+    """Gated fusion layer for combining traditional and PLM features."""
     
     def __init__(self, hidden_dim: int = 256, **kwargs):
         super(AttentionFusionLayer, self).__init__(**kwargs)
         self.hidden_dim = hidden_dim
-        from keras.layers import Attention, Dense, Add, LayerNormalization
-        self.attention = Attention(use_scale=True)
-        self.dense_traditional = Dense(hidden_dim, activation='relu')
-        self.dense_plm = Dense(hidden_dim, activation='relu')
-        self.dense_fusion = Dense(hidden_dim, activation='relu')
-        self.layer_norm = LayerNormalization()
+        from keras.layers import Dense, LayerNormalization, Multiply, Add
+        
+        # Project both inputs to same dimension
+        self.dense_traditional = Dense(hidden_dim, activation='relu', name='fusion_trad_proj')
+        self.dense_plm = Dense(hidden_dim, activation='relu', name='fusion_plm_proj')
+        
+        # Gating mechanism to learn importance of each feature type
+        self.gate_traditional = Dense(hidden_dim, activation='sigmoid', name='fusion_gate_trad')
+        self.gate_plm = Dense(hidden_dim, activation='sigmoid', name='fusion_gate_plm')
+        
+        # Final fusion layers
+        self.dense_fusion = Dense(hidden_dim, activation='relu', name='fusion_combined')
+        self.layer_norm = LayerNormalization(name='fusion_norm')
         
     def call(self, inputs):
         traditional_features, plm_features = inputs
+        
+        # Project features to same dimension
         traditional_proj = self.dense_traditional(traditional_features)
         plm_proj = self.dense_plm(plm_features)
-        attended_features = self.attention([traditional_proj, plm_proj, plm_proj])
-        from keras.layers import Add
-        combined = Add()([traditional_proj, attended_features])
+        
+        # Compute gates (learned importance weights)
+        gate_trad = self.gate_traditional(traditional_features)
+        gate_plm = self.gate_plm(plm_features)
+        
+        # Apply gating
+        from keras.layers import Multiply, Add
+        gated_trad = Multiply()([traditional_proj, gate_trad])
+        gated_plm = Multiply()([plm_proj, gate_plm])
+        
+        # Combine gated features
+        combined = Add()([gated_trad, gated_plm])
         combined = self.layer_norm(combined)
+        
+        # Final fusion
         fused = self.dense_fusion(combined)
+        
         return fused
     
     def get_config(self):
