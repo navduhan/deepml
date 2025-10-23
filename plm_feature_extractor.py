@@ -65,21 +65,26 @@ class ESM2FeatureExtractor:
         self._load_model()
     
     def _load_model(self):
-        """Load ESM-2 model and tokenizer."""
+        """Load ESM-2 model and tokenizer using torch.hub."""
+        import torch
+        
+        # Map simplified names to full torch.hub names
+        model_mapping = {
+            "esm2_t33_650M_UR50D": "esm2_t33_650M_UR50D",
+            "esm2_t30_150M_UR50D": "esm2_t30_150M_UR50D", 
+            "esm2_t12_35M_UR50D": "esm2_t12_35M_UR50D",
+            "esm2_t6_8M_UR50D": "esm2_t6_8M_UR50D",
+        }
+        
+        if self.model_name not in model_mapping:
+            raise ValueError(f"Unknown model: {self.model_name}. Available: {list(model_mapping.keys())}")
+        
+        model_name = model_mapping[self.model_name]
+        
         try:
-            # Map model names to ESM-2 loading functions
-            model_funcs = {
-                "esm2_t33_650M_UR50D": esm.pretrained.esm2_t33_650M_UR50D,
-                "esm2_t30_150M_UR50D": esm.pretrained.esm2_t30_150M_UR50D,
-                "esm2_t12_35M_UR50D": esm.pretrained.esm2_t12_35M_UR50D,
-                "esm2_t6_8M_UR50D": esm.pretrained.esm2_t6_8M_UR50D,
-            }
+            # Load model via torch.hub
+            self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)
             
-            if self.model_name not in model_funcs:
-                raise ValueError(f"Unknown model: {self.model_name}. Available: {list(model_funcs.keys())}")
-            
-            # Load model and alphabet
-            self.model, self.alphabet = model_funcs[self.model_name]()
             self.model.eval()
             self.model.to(self.device)
             
@@ -89,14 +94,15 @@ class ESM2FeatureExtractor:
             print(f"ESM-2 model loaded successfully on {self.device}")
             
         except Exception as e:
-            print(f"Error loading ESM-2 model: {e}")
+            print(f"Error loading ESM-2 model on {self.device}: {e}")
             if self.device != "cpu":
                 print("Falling back to CPU...")
                 self.device = "cpu"
-                self.model, self.alphabet = model_funcs[self.model_name]()
+                self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)
                 self.model.eval()
                 self.model.to(self.device)
                 self.batch_converter = self.alphabet.get_batch_converter()
+                print(f"ESM-2 model loaded successfully on CPU")
             else:
                 raise
     
