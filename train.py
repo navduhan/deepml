@@ -201,10 +201,10 @@ def evaluate_test_set(model, mode, X_test, X_test_plm, y_test, test_ids, feature
     visualizer.plot_confusion_matrix(y_test, test_predictions, prefix, "test", normalize=True)
     
     # Save predictions and metrics
-    pred_path = config.TEST_STAT_DIR / f"{prefix}_predictions.txt"
+    pred_path = config.TEST_STATS_DIR / f"{prefix}_predictions.txt"
     save_predictions_with_probabilities(test_ids, test_predictions, str(pred_path))
     
-    metrics_path = config.TEST_STAT_DIR / f"MCC_{prefix}_metrics.xlsx"
+    metrics_path = config.TEST_STATS_DIR / f"MCC_{prefix}_metrics.xlsx"
     save_metrics_to_excel(test_metrics, str(metrics_path))
     
     print(f"Test - Accuracy: {test_metrics['accuracy']:.4f}, MCC: {test_metrics['mcc']:.4f}")
@@ -230,8 +230,8 @@ def main():
     
     # Create directories
     config.MODEL_DIR.mkdir(exist_ok=True)
-    config.STAT_DIR.mkdir(exist_ok=True)
-    config.TEST_STAT_DIR.mkdir(exist_ok=True)
+    config.STATS_DIR.mkdir(exist_ok=True)
+    config.TEST_STATS_DIR.mkdir(exist_ok=True)
     config.PLOTS_DIR.mkdir(exist_ok=True)
     
     # Load data
@@ -289,7 +289,7 @@ def main():
     # Compute and save overall training metrics
     overall_metrics = compute_overall_metrics(all_val_metrics)
     prefix = args.feature_name if args.mode == "traditional" else f"{args.mode}_{args.feature_name}"
-    overall_path = config.STAT_DIR / f"MCC_{prefix}_train_all_folds.xlsx"
+    overall_path = config.STATS_DIR / f"MCC_{prefix}_train_all_folds.xlsx"
     save_metrics_to_excel(overall_metrics, str(overall_path))
     
     print(f"\n{'='*80}")
