@@ -451,6 +451,42 @@ The system calculates comprehensive metrics:
 | Hybrid CNN | 85-95% | Moderate | High | Medium |
 | ESM-2 Only | 85-90% | Slow | High | Low |
 
+## Troubleshooting
+
+### GPU Out of Memory (OOM) Errors
+
+If you encounter CUDA OOM errors when using hybrid or plm_only modes:
+
+**1. Reduce batch size in config.py:**
+```python
+PLM_BATCH_SIZE = 4  # Default is 8, try 4, 2, or 1
+```
+
+**2. Use a smaller ESM-2 model:**
+```python
+PLM_MODEL_NAME = "facebook/esm2_t12_35M_UR50D"  # Smaller, faster
+# Or even smaller:
+PLM_MODEL_NAME = "facebook/esm2_t6_8M_UR50D"  # Fastest
+```
+
+**3. Use CPU instead of GPU:**
+```bash
+CUDA_VISIBLE_DEVICES="" python train.py DPC 400 --mode hybrid
+```
+
+**4. Enable PyTorch memory optimization:**
+```bash
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True python train.py DPC 400 --mode hybrid
+```
+
+**Model Size Comparison:**
+| Model | Parameters | GPU Memory | Speed |
+|-------|-----------|------------|-------|
+| esm2_t6_8M_UR50D | 8M | ~2GB | Fast |
+| esm2_t12_35M_UR50D | 35M | ~4GB | Medium |
+| esm2_t30_150M_UR50D | 150M | ~8GB | Slow |
+| esm2_t33_650M_UR50D | 650M | ~16GB | Slowest |
+
 ## Visualization
 
 ### Using the Visualization Module
