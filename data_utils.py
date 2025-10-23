@@ -297,15 +297,16 @@ def load_all_training_data(data_dir, feature_name, vector_size, use_plm=True):
         vector_size (int): Feature vector size
     
     Returns:
-        tuple: (all_features, all_labels)
+        tuple: (all_features, all_labels, all_ids)
     
     Example:
-        >>> X_train, y_train = load_all_training_data(
+        >>> X_train, y_train, train_ids = load_all_training_data(
         ...     config.DATA_DIR, "DPC", 400
         ... )
     """
     all_features = []
     all_labels = []
+    all_ids = []
     
     print("\nLoading training data...")
     for i, class_label in enumerate(config.CLASS_LABELS):
@@ -318,12 +319,13 @@ def load_all_training_data(data_dir, feature_name, vector_size, use_plm=True):
         print(f"  Loading {class_label}...")
         one_hot_label = config.get_one_hot_label(class_label)
         
-        features, labels, _ = preprocess_sequences(
+        features, labels, ids = preprocess_sequences(
             train_file, feature_name, np.array(one_hot_label), vector_size
         )
         
         all_features.append(features)
         all_labels.append(labels)
+        all_ids.extend(ids)
         print(f"    Loaded {len(features)} sequences")
     
     # Concatenate all data
@@ -333,7 +335,7 @@ def load_all_training_data(data_dir, feature_name, vector_size, use_plm=True):
     print(f"\nTotal training samples: {len(all_features)}")
     print(f"Feature vector size: {vector_size}")
     
-    return all_features, all_labels
+    return all_features, all_labels, all_ids
 
 
 def load_all_test_data(data_dir, feature_name, vector_size):
