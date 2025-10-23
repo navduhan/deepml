@@ -212,83 +212,101 @@ def softmax(z):
 # PERFORMANCE METRICS
 # ============================================================================
 
-def calculate_metrics(confusion_matrix):
+def calculate_metrics(y_true, y_pred_proba):
     """
-    Calculate comprehensive performance metrics from confusion matrix.
+    Calculate comprehensive performance metrics for multi-class classification.
     
     Args:
-        confusion_matrix (list or np.array): [TN, FP, FN, TP]
+        y_true (np.array): True labels (one-hot encoded), shape (n_samples, n_classes)
+        y_pred_proba (np.array): Predicted probabilities, shape (n_samples, n_classes)
     
     Returns:
-        list: [TP, FN, TN, FP, Sensitivity, Specificity, Precision, NPV,
-               FPR, FDR, FNR, Accuracy, F1-score, MCC]
+        dict: Dictionary containing overall and per-class metrics
     
     Example:
-        >>> metrics = calculate_metrics([90, 10, 5, 95])
-        >>> print(f"Accuracy: {metrics[11]:.3f}")
+        >>> metrics = calculate_metrics(y_true, y_pred_proba)
+        >>> print(f"Accuracy: {metrics['accuracy']:.3f}")
     """
-    tn, fp, fn, tp = confusion_matrix
+    from sklearn.metrics import (
+        accuracy_score, f1_score, precision_score, recall_score,
+        confusion_matrix, matthews_corrcoef
+    )
     
-    # Avoid division by zero
-    epsilon = 1e-10
+    # Convert to class labels
+    y_true_labels = np.argmax(y_true, axis=1)
+    y_pred_labels = np.argmax(y_pred_proba, axis=1)
     
-    # Calculate metrics
-    sensitivity = tp / (tp + fn + epsilon)  # Recall, True Positive Rate
-    specificity = tn / (tn + fp + epsilon)  # True Negative Rate
-    precision = tp / (tp + fp + epsilon)    # Positive Predictive Value
-    npv = tn / (tn + fn + epsilon)          # Negative Predictive Value
-    fpr = fp / (fp + tn + epsilon)          # False Positive Rate
-    fdr = fp / (fp + tp + epsilon)          # False Discovery Rate
-    fnr = fn / (fn + tp + epsilon)          # False Negative Rate
-    accuracy = (tp + tn) / (tp + tn + fp + fn + epsilon)
-    f1_score = (2 * tp) / (2 * tp + fp + fn + epsilon)
+    # Overall metrics
+    accuracy = accuracy_score(y_true_labels, y_pred_labels)
+    f1_macro = f1_score(y_true_labels, y_pred_labels, average='macro', zero_division=0)
+    f1_weighted = f1_score(y_true_labels, y_pred_labels, average='weighted', zero_division=0)
+    precision_macro = precision_score(y_true_labels, y_pred_labels, average='macro', zero_division=0)
+    recall_macro = recall_score(y_true_labels, y_pred_labels, average='macro', zero_division=0)
+    mcc = matthews_corrcoef(y_true_labels, y_pred_labels)
     
-    # Matthews Correlation Coefficient
-    denominator = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
-    if denominator == 0:
-        mcc = 0
-    else:
-        mcc = ((tp * tn) - (fp * fn)) / denominator
+    # Per-class metrics
+    f1_per_class = f1_score(y_true_labels, y_pred_labels, average=None, zero_division=0)
+    precision_per_class = precision_score(y_true_labels, y_pred_labels, average=None, zero_division=0)
+    recall_per_class = recall_score(y_true_labels, y_pred_labels, average=None, zero_division=0)
     
-    return [
-        tp, fn, tn, fp,
-        sensitivity, specificity, precision, npv,
-        fpr, fdr, fnr,
-        accuracy, f1_score, mcc
-    ]
+    # Confusion matrix
+    cm = confusion_matrix(y_true_labels, y_pred_labels)
+    
+    return {
+        'accuracy': accuracy,
+        'f1_score': f1_macro,
+        'f1_weighted': f1_weighted,
+        'precision': precision_macro,
+        'recall': recall_macro,
+        'mcc': mcc,
+        'f1_per_class': f1_per_class,
+        'precision_per_class': precision_per_class,
+        'recall_per_class': recall_per_class,
+        'confusion_matrix': cm,
+        'y_true': y_true_labels,
+        'y_pred': y_pred_labels
+    }
 
 
-def compute_overall_metrics(class_metrics_df):
+def compute_overall_metrics(all_fold_metrics):
     """
-    Compute overall weighted metrics from per-class metrics.
+    Compute average metrics across all folds.
     
     Args:
-        class_metrics_df (pd.DataFrame): DataFrame with per-class metrics
+        all_fold_metrics (list): List of metric dictionaries from each fold
     
     Returns:
-        pd.DataFrame: Single row DataFrame with overall metrics
+        dict: Average metrics across all folds
     
     Example:
-        >>> overall = compute_overall_metrics(metrics_df)
+        >>> overall = compute_overall_metrics([fold1_metrics, fold2_metrics])
     """
-    # Calculate weights based on total samples per class
-    class_metrics_df['Total'] = class_metrics_df['TP'] + class_metrics_df['FP']
-    total_samples = class_metrics_df['Total'].sum()
+    if not all_fold_metrics:
+        return {}
     
-    # Weighted metrics
-    weighted_metrics = {}
-    metrics_to_weight = ['Sensitivity', 'Specificity', 'Precision', 'NPV',
-                         'FPR', 'FDR', 'FNR', 'Accuracy', 'F1score', 'MCC']
+    # Average scalar metrics across folds
+    avg_metrics = {
+        'accuracy': np.mean([m['accuracy'] for m in all_fold_metrics]),
+        'f1_score': np.mean([m['f1_score'] for m in all_fold_metrics]),
+        'f1_weighted': np.mean([m['f1_weighted'] for m in all_fold_metrics]),
+        'precision': np.mean([m['precision'] for m in all_fold_metrics]),
+        'recall': np.mean([m['recall'] for m in all_fold_metrics]),
+        'mcc': np.mean([m['mcc'] for m in all_fold_metrics]),
+    }
     
-    for metric in metrics_to_weight:
-        weighted_metrics[metric] = (
-            (class_metrics_df[metric] * class_metrics_df['Total']).sum() / 
-            total_samples
-        )
+    # Average per-class metrics
+    num_classes = len(all_fold_metrics[0]['f1_per_class'])
+    avg_metrics['f1_per_class'] = np.mean(
+        [m['f1_per_class'] for m in all_fold_metrics], axis=0
+    )
+    avg_metrics['precision_per_class'] = np.mean(
+        [m['precision_per_class'] for m in all_fold_metrics], axis=0
+    )
+    avg_metrics['recall_per_class'] = np.mean(
+        [m['recall_per_class'] for m in all_fold_metrics], axis=0
+    )
     
-    # Sum of confusion matrix elements
-    overall = {
-        'Metrics': 'Overall',
+    return avg_metrics
         'TP': class_metrics_df['TP'].sum(),
         'FP': class_metrics_df['FP'].sum(),
         'TN': class_metrics_df['TN'].sum(),
@@ -481,19 +499,45 @@ def save_predictions_with_probabilities(predictions, probabilities, ids,
 
 def save_metrics_to_excel(metrics_dict, output_file):
     """
-    Save metrics dictionary to Excel file with multiple sheets.
+    Save metrics dictionary to Excel file.
     
     Args:
-        metrics_dict (dict): Dictionary with sheet names as keys and DataFrames as values
+        metrics_dict (dict): Dictionary with metric names and values
         output_file (Path or str): Output Excel file path
     
     Example:
-        >>> metrics = {'Fold_1': df1, 'Fold_2': df2}
+        >>> metrics = {'accuracy': 0.95, 'f1_score': 0.93}
         >>> save_metrics_to_excel(metrics, "metrics.xlsx")
     """
+    # Convert metrics dict to DataFrame
+    overall_metrics = {
+        'Metric': ['Accuracy', 'F1-Score (Macro)', 'F1-Score (Weighted)', 
+                   'Precision', 'Recall', 'MCC'],
+        'Value': [
+            metrics_dict.get('accuracy', 0),
+            metrics_dict.get('f1_score', 0),
+            metrics_dict.get('f1_weighted', 0),
+            metrics_dict.get('precision', 0),
+            metrics_dict.get('recall', 0),
+            metrics_dict.get('mcc', 0)
+        ]
+    }
+    df_overall = pd.DataFrame(overall_metrics)
+    
+    # Save to Excel
     with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        for sheet_name, df in metrics_dict.items():
-            df.to_excel(writer, sheet_name=sheet_name, index=False)
+        df_overall.to_excel(writer, sheet_name='Overall', index=False)
+        
+        # Add per-class metrics if available
+        if 'f1_per_class' in metrics_dict:
+            per_class_metrics = {
+                'Class': list(range(len(metrics_dict['f1_per_class']))),
+                'F1-Score': metrics_dict['f1_per_class'],
+                'Precision': metrics_dict['precision_per_class'],
+                'Recall': metrics_dict['recall_per_class']
+            }
+            df_per_class = pd.DataFrame(per_class_metrics)
+            df_per_class.to_excel(writer, sheet_name='Per-Class', index=False)
     
     print(f"Metrics saved to: {output_file}")
 
