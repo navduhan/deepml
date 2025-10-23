@@ -17,12 +17,12 @@ import warnings
 warnings.filterwarnings("ignore")
 
 try:
-    import esm
     from transformers import EsmModel, EsmTokenizer
+    import torch
     ESM_AVAILABLE = True
 except ImportError:
     ESM_AVAILABLE = False
-    print("Warning: ESM-2 not available. Install with: pip install fair-esm transformers torch")
+    print("Warning: ESM-2 not available. Install with: pip install transformers torch")
 
 import config
 
@@ -65,43 +65,46 @@ class ESM2FeatureExtractor:
         self._load_model()
     
     def _load_model(self):
-        """Load ESM-2 model and tokenizer using torch.hub."""
+        """Load ESM-2 model and tokenizer using Hugging Face transformers."""
+        from transformers import EsmModel, EsmTokenizer
         import torch
         
-        # Map simplified names to full torch.hub names
+        # Map simplified names to Hugging Face model names
         model_mapping = {
-            "esm2_t33_650M_UR50D": "esm2_t33_650M_UR50D",
-            "esm2_t30_150M_UR50D": "esm2_t30_150M_UR50D", 
-            "esm2_t12_35M_UR50D": "esm2_t12_35M_UR50D",
-            "esm2_t6_8M_UR50D": "esm2_t6_8M_UR50D",
+            "esm2_t33_650M_UR50D": "facebook/esm2_t33_650M_UR50D",
+            "esm2_t30_150M_UR50D": "facebook/esm2_t30_150M_UR50D", 
+            "esm2_t12_35M_UR50D": "facebook/esm2_t12_35M_UR50D",
+            "esm2_t6_8M_UR50D": "facebook/esm2_t6_8M_UR50D",
         }
         
-        if self.model_name not in model_mapping:
+        # Allow both formats (with or without 'facebook/' prefix)
+        if self.model_name.startswith('facebook/'):
+            hf_model_name = self.model_name
+        elif self.model_name in model_mapping:
+            hf_model_name = model_mapping[self.model_name]
+        else:
             raise ValueError(f"Unknown model: {self.model_name}. Available: {list(model_mapping.keys())}")
         
-        model_name = model_mapping[self.model_name]
-        
         try:
-            # Load model via torch.hub
-            self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)
+            # Load model and tokenizer via Hugging Face
+            self.model = EsmModel.from_pretrained(hf_model_name)
+            self.tokenizer = EsmTokenizer.from_pretrained(hf_model_name)
             
             self.model.eval()
             self.model.to(self.device)
             
-            # Get batch converter
-            self.batch_converter = self.alphabet.get_batch_converter()
-            
             print(f"ESM-2 model loaded successfully on {self.device}")
+            print(f"Model: {hf_model_name}")
             
         except Exception as e:
             print(f"Error loading ESM-2 model on {self.device}: {e}")
             if self.device != "cpu":
                 print("Falling back to CPU...")
                 self.device = "cpu"
-                self.model, self.alphabet = torch.hub.load("facebookresearch/esm:main", model_name)
+                self.model = EsmModel.from_pretrained(hf_model_name)
+                self.tokenizer = EsmTokenizer.from_pretrained(hf_model_name)
                 self.model.eval()
                 self.model.to(self.device)
-                self.batch_converter = self.alphabet.get_batch_converter()
                 print(f"ESM-2 model loaded successfully on CPU")
             else:
                 raise
@@ -110,13 +113,13 @@ class ESM2FeatureExtractor:
                           pooling_strategy: str = "mean",
                           max_length: int = 1024) -> np.ndarray:
         """
-        Extract ESM-2 embeddings for protein sequences.
+        Extract ESM-2 embeddings for protein sequences using Hugging Face transformers.
         
         Args:
             sequences (List[str]): List of protein sequences
             pooling_strategy (str): How to pool sequence embeddings
                 - 'mean': Average over sequence length
-                - 'cls': Use [CLS] token (if available)
+                - 'cls': Use [CLS] token
                 - 'max': Max pooling
                 - 'last': Last token
             max_length (int): Maximum sequence length (truncate if longer)
@@ -127,39 +130,42 @@ class ESM2FeatureExtractor:
         if not sequences:
             return np.array([])
         
+        import torch
+        
         # Truncate sequences if too long
         sequences = [seq[:max_length] for seq in sequences]
         
-        # Prepare batch data
-        batch_data = [(i, seq) for i, seq in enumerate(sequences)]
-        
-        # Tokenize and convert to batch
-        batch_labels, batch_strs, batch_tokens = self.batch_converter(batch_data)
-        batch_tokens = batch_tokens.to(self.device)
+        # Tokenize sequences
+        inputs = self.tokenizer(sequences, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
         
         # Extract embeddings
         with torch.no_grad():
-            results = self.model(batch_tokens, repr_layers=[33])  # Use last layer
-            embeddings = results["representations"][33]  # Shape: (batch, seq_len, hidden_dim)
+            outputs = self.model(**inputs, output_hidden_states=True)
+            # Get last hidden state
+            embeddings = outputs.last_hidden_state  # Shape: (batch, seq_len, hidden_dim)
         
         # Apply pooling strategy
+        attention_mask = inputs['attention_mask']
+        
         if pooling_strategy == "mean":
-            # Mask out padding tokens
-            attention_mask = (batch_tokens != self.alphabet.padding_idx).float()
-            pooled_embeddings = (embeddings * attention_mask.unsqueeze(-1)).sum(1) / attention_mask.sum(1, keepdim=True)
+            # Mean pooling (excluding padding tokens)
+            mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
+            sum_embeddings = torch.sum(embeddings * mask_expanded, 1)
+            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
+            pooled_embeddings = sum_embeddings / sum_mask
         elif pooling_strategy == "cls":
-            # Use first token (usually [CLS])
+            # Use [CLS] token (first token)
             pooled_embeddings = embeddings[:, 0, :]
         elif pooling_strategy == "max":
             # Max pooling
-            attention_mask = (batch_tokens != self.alphabet.padding_idx).float()
-            masked_embeddings = embeddings * attention_mask.unsqueeze(-1)
-            pooled_embeddings = masked_embeddings.max(1)[0]
+            mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
+            embeddings[mask_expanded == 0] = -1e9  # Set padding to large negative
+            pooled_embeddings = torch.max(embeddings, 1)[0]
         elif pooling_strategy == "last":
             # Use last non-padding token
-            attention_mask = (batch_tokens != self.alphabet.padding_idx).long()
-            last_indices = attention_mask.sum(1) - 1
-            pooled_embeddings = embeddings[torch.arange(embeddings.size(0)), last_indices]
+            sequence_lengths = attention_mask.sum(1) - 1
+            pooled_embeddings = embeddings[torch.arange(embeddings.size(0)), sequence_lengths]
         else:
             raise ValueError(f"Unknown pooling strategy: {pooling_strategy}")
         
@@ -168,7 +174,7 @@ class ESM2FeatureExtractor:
     def extract_per_residue_embeddings(self, sequences: List[str], 
                                      max_length: int = 1024) -> List[np.ndarray]:
         """
-        Extract per-residue ESM-2 embeddings.
+        Extract per-residue ESM-2 embeddings using Hugging Face transformers.
         
         Args:
             sequences (List[str]): List of protein sequences
@@ -180,24 +186,25 @@ class ESM2FeatureExtractor:
         if not sequences:
             return []
         
+        import torch
+        
         # Truncate sequences
         sequences = [seq[:max_length] for seq in sequences]
         
         all_embeddings = []
         
         for seq in sequences:
-            # Prepare single sequence
-            batch_data = [(0, seq)]
-            batch_labels, batch_strs, batch_tokens = self.batch_converter(batch_data)
-            batch_tokens = batch_tokens.to(self.device)
+            # Tokenize single sequence
+            inputs = self.tokenizer([seq], return_tensors="pt", padding=True, truncation=True, max_length=max_length)
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
             # Extract embeddings
             with torch.no_grad():
-                results = self.model(batch_tokens, repr_layers=[33])
-                embeddings = results["representations"][33]  # Shape: (1, seq_len, hidden_dim)
+                outputs = self.model(**inputs, output_hidden_states=True)
+                embeddings = outputs.last_hidden_state  # Shape: (1, seq_len, hidden_dim)
             
-            # Remove padding and special tokens
-            attention_mask = (batch_tokens[0] != self.alphabet.padding_idx).cpu().numpy()
+            # Remove padding tokens (keep only actual sequence)
+            attention_mask = inputs['attention_mask'][0].cpu().numpy().astype(bool)
             seq_embeddings = embeddings[0].cpu().numpy()[attention_mask]
             
             all_embeddings.append(seq_embeddings)
@@ -206,7 +213,7 @@ class ESM2FeatureExtractor:
     
     def get_embedding_dim(self) -> int:
         """Get the dimension of ESM-2 embeddings."""
-        return self.model.embed_tokens.embedding_dim
+        return self.model.config.hidden_size
     
     def save_embeddings(self, embeddings: np.ndarray, 
                        sequence_ids: List[str], 
