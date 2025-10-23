@@ -510,7 +510,7 @@ def load_training_data_with_plm(data_dir, feature_name, vector_size):
         
         # Get or compute PLM embeddings
         plm_features = plm_manager.get_or_compute_embeddings(
-            sequences, protein_ids
+            sequences, protein_ids, batch_size=config.PLM_BATCH_SIZE
         )
         
         print(f"PLM features shape: {plm_features.shape}")
@@ -550,7 +550,7 @@ def load_test_data_with_plm(data_dir, feature_name, vector_size):
         
         # Get or compute PLM embeddings
         plm_features = plm_manager.get_or_compute_embeddings(
-            sequences, protein_ids
+            sequences, protein_ids, batch_size=config.PLM_BATCH_SIZE
         )
         
         print(f"PLM features shape: {plm_features.shape}")

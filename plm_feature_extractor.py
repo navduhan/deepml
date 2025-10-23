@@ -111,9 +111,11 @@ class ESM2FeatureExtractor:
     
     def extract_embeddings(self, sequences: List[str], 
                           pooling_strategy: str = "mean",
-                          max_length: int = 1024) -> np.ndarray:
+                          max_length: int = 1024,
+                          batch_size: int = 8) -> np.ndarray:
         """
         Extract ESM-2 embeddings for protein sequences using Hugging Face transformers.
+        Processes sequences in batches to avoid GPU memory issues.
         
         Args:
             sequences (List[str]): List of protein sequences
@@ -123,6 +125,7 @@ class ESM2FeatureExtractor:
                 - 'max': Max pooling
                 - 'last': Last token
             max_length (int): Maximum sequence length (truncate if longer)
+            batch_size (int): Number of sequences to process at once (default: 8)
         
         Returns:
             np.ndarray: Shape (n_sequences, embedding_dim)
@@ -135,41 +138,63 @@ class ESM2FeatureExtractor:
         # Truncate sequences if too long
         sequences = [seq[:max_length] for seq in sequences]
         
-        # Tokenize sequences
-        inputs = self.tokenizer(sequences, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        # Process in batches to avoid OOM
+        all_pooled_embeddings = []
         
-        # Extract embeddings
-        with torch.no_grad():
-            outputs = self.model(**inputs, output_hidden_states=True)
-            # Get last hidden state
-            embeddings = outputs.last_hidden_state  # Shape: (batch, seq_len, hidden_dim)
+        for i in range(0, len(sequences), batch_size):
+            batch_sequences = sequences[i:i + batch_size]
+            
+            try:
+                # Tokenize batch
+                inputs = self.tokenizer(batch_sequences, return_tensors="pt", padding=True, 
+                                       truncation=True, max_length=max_length)
+                inputs = {k: v.to(self.device) for k, v in inputs.items()}
+                
+                # Extract embeddings
+                with torch.no_grad():
+                    outputs = self.model(**inputs, output_hidden_states=True)
+                    embeddings = outputs.last_hidden_state  # Shape: (batch, seq_len, hidden_dim)
+                
+                # Apply pooling strategy
+                attention_mask = inputs['attention_mask']
+                
+                if pooling_strategy == "mean":
+                    mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
+                    sum_embeddings = torch.sum(embeddings * mask_expanded, 1)
+                    sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
+                    pooled_embeddings = sum_embeddings / sum_mask
+                elif pooling_strategy == "cls":
+                    pooled_embeddings = embeddings[:, 0, :]
+                elif pooling_strategy == "max":
+                    mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
+                    embeddings[mask_expanded == 0] = -1e9
+                    pooled_embeddings = torch.max(embeddings, 1)[0]
+                elif pooling_strategy == "last":
+                    sequence_lengths = attention_mask.sum(1) - 1
+                    pooled_embeddings = embeddings[torch.arange(embeddings.size(0)), sequence_lengths]
+                else:
+                    raise ValueError(f"Unknown pooling strategy: {pooling_strategy}")
+                
+                all_pooled_embeddings.append(pooled_embeddings.cpu().numpy())
+                
+                # Clear GPU cache
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
+                    
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(f"GPU OOM at batch {i//batch_size + 1}. Clearing cache and retrying with smaller batch...")
+                    if self.device == "cuda":
+                        torch.cuda.empty_cache()
+                    # Retry with smaller batch size
+                    if batch_size > 1:
+                        return self.extract_embeddings(sequences, pooling_strategy, max_length, batch_size//2)
+                    else:
+                        raise RuntimeError("Cannot process even single sequence. Try using CPU or smaller model.")
+                else:
+                    raise
         
-        # Apply pooling strategy
-        attention_mask = inputs['attention_mask']
-        
-        if pooling_strategy == "mean":
-            # Mean pooling (excluding padding tokens)
-            mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-            sum_embeddings = torch.sum(embeddings * mask_expanded, 1)
-            sum_mask = torch.clamp(mask_expanded.sum(1), min=1e-9)
-            pooled_embeddings = sum_embeddings / sum_mask
-        elif pooling_strategy == "cls":
-            # Use [CLS] token (first token)
-            pooled_embeddings = embeddings[:, 0, :]
-        elif pooling_strategy == "max":
-            # Max pooling
-            mask_expanded = attention_mask.unsqueeze(-1).expand(embeddings.size()).float()
-            embeddings[mask_expanded == 0] = -1e9  # Set padding to large negative
-            pooled_embeddings = torch.max(embeddings, 1)[0]
-        elif pooling_strategy == "last":
-            # Use last non-padding token
-            sequence_lengths = attention_mask.sum(1) - 1
-            pooled_embeddings = embeddings[torch.arange(embeddings.size(0)), sequence_lengths]
-        else:
-            raise ValueError(f"Unknown pooling strategy: {pooling_strategy}")
-        
-        return pooled_embeddings.cpu().numpy()
+        return np.vstack(all_pooled_embeddings)
     
     def extract_per_residue_embeddings(self, sequences: List[str], 
                                      max_length: int = 1024) -> List[np.ndarray]:
@@ -250,7 +275,8 @@ class PLMFeatureManager:
     
     def get_or_compute_embeddings(self, sequences: List[str], 
                                  sequence_ids: List[str],
-                                 force_recompute: bool = False) -> np.ndarray:
+                                 force_recompute: bool = False,
+                                 batch_size: int = 8) -> np.ndarray:
         """
         Get embeddings from cache or compute them.
         
@@ -258,12 +284,13 @@ class PLMFeatureManager:
             sequences (List[str]): Protein sequences
             sequence_ids (List[str]): Unique identifiers for sequences
             force_recompute (bool): Force recomputation even if cached
+            batch_size (int): Batch size for computing embeddings (default: 8)
         
         Returns:
             np.ndarray: ESM-2 embeddings
         """
         # Create cache file name
-        cache_file = self.cache_dir / f"embeddings_{self.extractor.model_name}.npz"
+        cache_file = self.cache_dir / f"embeddings_{self.extractor.model_name.replace('/', '_')}.npz"
         
         # Load from cache if available and not forcing recompute
         if cache_file.exists() and not force_recompute:
@@ -276,17 +303,19 @@ class PLMFeatureManager:
                     # Get indices for requested sequences
                     id_to_idx = {sid: i for i, sid in enumerate(cached_ids)}
                     indices = [id_to_idx[sid] for sid in sequence_ids]
+                    print(f"Loaded {len(indices)} embeddings from cache")
                     return embeddings[indices]
                 else:
                     print("Cache incomplete, recomputing...")
             except Exception as e:
                 print(f"Error loading cache: {e}, recomputing...")
         
-        # Compute embeddings
-        print("Computing ESM-2 embeddings...")
-        embeddings = self.extractor.extract_embeddings(sequences)
+        # Compute embeddings with batch processing
+        print(f"Computing ESM-2 embeddings for {len(sequences)} sequences (batch_size={batch_size})...")
+        embeddings = self.extractor.extract_embeddings(sequences, batch_size=batch_size)
         
         # Save to cache
+        print("Saving embeddings to cache...")
         self.extractor.save_embeddings(embeddings, sequence_ids, cache_file)
         
         return embeddings
